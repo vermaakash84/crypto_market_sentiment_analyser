@@ -1,112 +1,75 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
+import pickle
+import xgboost as xgb
 
-# --- Load champion model ---
-model = joblib.load("champion_model.pkl")
+# --- Load the trained model ---
+with open("champion_model.pkl", "rb") as f:
+    model = pickle.load(f)
 
-# --- Feature columns expected by your model ---
-feature_cols = [
-    'mean_exec_price', 'total_usd', 'total_tokens', 'avg_fee', 'total_pnl',
-    'buy_ratio', 'crossed_ratio', 'exec_price_volatility', 'fee_volatility',
-    'price_efficiency', 'fee_efficiency', 'risk_reward', 'aggressiveness',
-    'smart_money', 'pnl_per_usd', 'enhanced_fee_efficiency', 'smart_fee_ratio',
-    'risk_adjusted_efficiency', 'aggressive_efficiency', 'volatility_ratio',
-    'stable_efficiency', 'top_features_interaction'
-]
-
-st.title("🚀 Crypto Market Sentiment Analyser")
-
-st.markdown("""
-This app lets you input trades dynamically, calculates all features your model needs, 
-and gives real-time predictions. Top trades, summary stats, and extreme values are highlighted.
-""")
-
-# --- Editable trades table ---
-if 'trades' not in st.session_state:
-    # initialize with 5 empty rows
+# --- Initialize session state for trades ---
+if "trades" not in st.session_state:
     st.session_state.trades = pd.DataFrame({
-        'price': [0.0]*5,
-        'size': [0.0]*5,
-        'side': ['buy','buy','buy','buy','buy']
+        "price": [100, 102, 101, 103, 105],
+        "size": [1.5, 2.0, 1.0, 2.5, 1.2],
+        "side": ["buy","buy","buy","buy","buy"]
     })
 
-edited_df = st.experimental_data_editor(st.session_state.trades, num_rows="dynamic")
-st.session_state.trades = edited_df.copy()
+st.title("Crypto Market Sentiment Analyser")
+
+st.subheader("Editable Trades Table")
+
+# --- Editable trades table using input widgets ---
+edited_trades = []
+for i, row in st.session_state.trades.iterrows():
+    col1, col2, col3 = st.columns(3)
+    price = col1.number_input(f"Price {i}", value=float(row["price"]), key=f"price_{i}")
+    size = col2.number_input(f"Size {i}", value=float(row["size"]), key=f"size_{i}")
+    side = col3.selectbox(f"Side {i}", ["buy", "sell"], index=0 if row["side"]=="buy" else 1, key=f"side_{i}")
+    edited_trades.append({"price": price, "size": size, "side": side})
+
+st.session_state.trades = pd.DataFrame(edited_trades)
 
 # --- Feature calculation function ---
-def calculate_features(trades_df):
-    df = trades_df.copy()
-    if df.empty:
-        return pd.DataFrame(columns=feature_cols)
-    
-    # Basic example feature calculations
-    df['buy_flag'] = (df['side']=='buy').astype(int)
-    df['sell_flag'] = (df['side']=='sell').astype(int)
-    total_usd = (df['price']*df['size']).sum()
-    total_tokens = df['size'].sum()
-    avg_fee = 0.001  # placeholder, you can calculate actual fees
-    total_pnl = 0.0  # placeholder
-    buy_ratio = df['buy_flag'].mean()
-    crossed_ratio = buy_ratio  # placeholder
-    exec_price_volatility = df['price'].std() if len(df)>1 else 0.0
-    fee_volatility = 0.0
-    price_efficiency = 1.0
-    fee_efficiency = 1.0
-    risk_reward = 1.0
-    aggressiveness = df['size'].max() if not df.empty else 0
-    smart_money = 0.5
-    pnl_per_usd = total_pnl / total_usd if total_usd != 0 else 0
-    enhanced_fee_efficiency = 1.0
-    smart_fee_ratio = 1.0
-    risk_adjusted_efficiency = 1.0
-    aggressive_efficiency = 1.0
-    volatility_ratio = 1.0
-    stable_efficiency = 1.0
-    top_features_interaction = 1.0
-    
-    features = pd.DataFrame([[
-        df['price'].mean(), total_usd, total_tokens, avg_fee, total_pnl,
-        buy_ratio, crossed_ratio, exec_price_volatility, fee_volatility,
-        price_efficiency, fee_efficiency, risk_reward, aggressiveness,
-        smart_money, pnl_per_usd, enhanced_fee_efficiency, smart_fee_ratio,
-        risk_adjusted_efficiency, aggressive_efficiency, volatility_ratio,
-        stable_efficiency, top_features_interaction
-    ]], columns=feature_cols)
-    
-    return features
+def compute_features(df):
+    df = df.copy()
+    # Example features - match your model's expected feature names
+    df["total_usd"] = df["price"] * df["size"]
+    df["buy_ratio"] = df["side"].apply(lambda x: 1 if x=="buy" else 0)
+    df["crossed_ratio"] = df["buy_ratio"].rolling(3, min_periods=1).mean()
+    df["avg_fee"] = df["size"] * 0.001  # Example fee calculation
+    df["total_pnl"] = df["price"].diff().fillna(0) * df["size"]
+    df["price_efficiency"] = df["price"].pct_change().fillna(0)
+    df["fee_efficiency"] = df["avg_fee"] / (df["total_usd"] + 1e-6)
+    # Add placeholder for remaining features expected by your model
+    # Fill missing features with zeros
+    expected_features = model.get_booster().feature_names
+    for feat in expected_features:
+        if feat not in df.columns:
+            df[feat] = 0.0
+    return df[expected_features]
 
-# --- Calculate features dynamically ---
-features_for_model = calculate_features(st.session_state.trades)
+# --- Compute features ---
+features_df = compute_features(st.session_state.trades)
 
-# --- Make predictions ---
-if not features_for_model.empty:
-    predictions = model.predict(features_for_model)[0]
-else:
-    predictions = None
+# --- Predict using model ---
+predictions = model.predict(features_df)
+st.session_state.trades["prediction"] = predictions
 
-st.subheader("📊 Predictions")
-st.write(f"Predicted Sentiment Score: **{predictions}**")
+# --- Display results ---
+st.subheader("Trades with Predictions")
+st.dataframe(st.session_state.trades)
 
-# --- Top 3 trades ---
-st.subheader("🏆 Top 3 Trades by Size")
-if not st.session_state.trades.empty:
-    top_trades = st.session_state.trades.nlargest(3, 'size')
-    st.table(top_trades)
+st.subheader("Top 3 Trades by Prediction")
+st.dataframe(st.session_state.trades.nlargest(3, "prediction"))
 
-# --- Summary statistics ---
-st.subheader("📈 Summary Statistics")
-if not st.session_state.trades.empty:
-    summary_stats = st.session_state.trades.describe()
-    st.table(summary_stats)
+st.subheader("Summary Statistics")
+st.write(st.session_state.trades.describe())
 
-# --- Highlight extremes ---
-st.subheader("⚡ Extreme Trades Highlighted")
-if not st.session_state.trades.empty:
-    df_highlighted = st.session_state.trades.copy()
-    # highlight trades with price > mean+2*std
-    price_threshold = df_highlighted['price'].mean() + 2*df_highlighted['price'].std()
-    df_highlighted['extreme'] = df_highlighted['price'] > price_threshold
-    st.table(df_highlighted)
+st.subheader("Highlight Extremes")
+st.write("High prediction trades:")
+st.dataframe(st.session_state.trades[st.session_state.trades["prediction"] > st.session_state.trades["prediction"].mean()])
+
+st.write("Low prediction trades:")
+st.dataframe(st.session_state.trades[st.session_state.trades["prediction"] < st.session_state.trades["prediction"].mean()])
