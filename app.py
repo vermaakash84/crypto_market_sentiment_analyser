@@ -6,60 +6,85 @@ import joblib
 # --- Load champion model ---
 model = joblib.load("champion_model.pkl")
 
-# --- Load precomputed features ---
-# This CSV must have columns exactly matching the features your model was trained on
-precomputed_features = pd.read_csv("precomputed_features.csv")
+# --- Define the features your model expects ---
+model_features = [
+    'mean_exec_price', 'total_usd', 'total_tokens', 'avg_fee', 'total_pnl',
+    'buy_ratio', 'crossed_ratio', 'exec_price_volatility', 'fee_volatility',
+    'price_efficiency', 'fee_efficiency', 'risk_reward', 'aggressiveness',
+    'smart_money', 'pnl_per_usd', 'enhanced_fee_efficiency', 'smart_fee_ratio',
+    'risk_adjusted_efficiency', 'aggressive_efficiency', 'volatility_ratio',
+    'stable_efficiency', 'top_features_interaction'
+]
 
-# --- Load original trades corresponding to precomputed features ---
-# This CSV is optional, for editable UI and matching predictions
-trade_inputs = pd.read_csv("trade_inputs.csv")
+# --- Feature calculation function ---
+def calculate_features(df):
+    df_feat = pd.DataFrame()
+    df_feat['mean_exec_price'] = df['price'].rolling(2, min_periods=1).mean()
+    df_feat['total_usd'] = df['price'] * df['size']
+    df_feat['total_tokens'] = df['size']
+    df_feat['avg_fee'] = 0.001
+    df_feat['total_pnl'] = df_feat['total_usd'].cumsum()
+    df_feat['buy_ratio'] = (df['side'] == 'buy').cumsum() / (np.arange(len(df)) + 1)
+    df_feat['crossed_ratio'] = 0.5
+    df_feat['exec_price_volatility'] = df['price'].rolling(2, min_periods=1).std().fillna(0)
+    df_feat['fee_volatility'] = 0.0
+    df_feat['price_efficiency'] = df['price'] / df['price'].mean()
+    df_feat['fee_efficiency'] = 1.0
+    df_feat['risk_reward'] = 1.0
+    df_feat['aggressiveness'] = (df['side'] == 'buy').astype(int)
+    df_feat['smart_money'] = 0.0
+    df_feat['pnl_per_usd'] = df_feat['total_pnl'] / (df_feat['total_usd'] + 1e-9)
+    df_feat['enhanced_fee_efficiency'] = 1.0
+    df_feat['smart_fee_ratio'] = 0.0
+    df_feat['risk_adjusted_efficiency'] = 1.0
+    df_feat['aggressive_efficiency'] = 1.0
+    df_feat['volatility_ratio'] = df_feat['exec_price_volatility'] / (df['price'] + 1e-9)
+    df_feat['stable_efficiency'] = 1.0
+    df_feat['top_features_interaction'] = df_feat['mean_exec_price'] * df_feat['buy_ratio']
+    return df_feat
 
-st.title("Crypto Market Sentiment Analyzer (Champion Model)")
-st.write("This app uses the champion model for predictions.")
+# --- Streamlit App ---
+st.title("Crypto Market Sentiment Analyser (Live Dashboard)")
 
-# --- Editable Trade Table ---
-st.subheader("Trade Input Table")
-df_raw = st.data_editor(trade_inputs, num_rows="dynamic", width="stretch")
+# --- Editable trades table with dynamic rows ---
+st.subheader("Editable Trades Table")
+if "trades" not in st.session_state:
+    st.session_state.trades = pd.DataFrame({
+        "price": [100, 102, 101],
+        "size": [1, 2, 1.5],
+        "side": ["buy", "sell", "buy"]
+    })
 
-# --- Map edits to precomputed features ---
-# For simplicity, we assume the user edits don't change feature names
-# In practice, you'd recalculate features here
-df_features_for_model = precomputed_features.loc[df_raw.index]
+editable_trades = st.experimental_data_editor(
+    st.session_state.trades,
+    num_rows="dynamic",
+    key="trades_editor"
+)
 
-# --- Make predictions ---
-if not df_features_for_model.empty:
-    df_raw["prediction"] = model.predict(df_features_for_model)
-else:
-    df_raw["prediction"] = []
+# --- Update session state ---
+st.session_state.trades = editable_trades.copy()
 
-# --- Highlight extreme trades ---
-def highlight_extremes(row):
-    if row["size"] > df_raw["size"].mean() + 2*df_raw["size"].std():
-        return ["background-color: #ffcccc"]*len(row)
-    else:
-        return [""]*len(row)
+# --- Compute features dynamically ---
+features_df = calculate_features(editable_trades)
 
-st.subheader("Trades with Predictions")
-st.dataframe(df_raw.style.apply(highlight_extremes, axis=1), width="stretch")
+# --- Ensure all model features exist ---
+for col in model_features:
+    if col not in features_df.columns:
+        features_df[col] = 0
 
-# --- Summary Stats ---
-st.subheader("Summary Stats")
-total_buys = df_raw[df_raw["side"].str.lower()=="buy"]["size"].sum()
-total_sells = df_raw[df_raw["side"].str.lower()=="sell"]["size"].sum()
-largest_trade = df_raw["size"].max() if not df_raw.empty else 0
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Buys", total_buys)
-col2.metric("Total Sells", total_sells)
-col3.metric("Largest Trade", largest_trade)
+X = features_df[model_features]
 
-# --- Top 3 Largest Trades ---
-def top_3_trades(df):
-    if df.empty:
-        return pd.DataFrame(columns=["Rank", "Price", "Size", "Side", "Indicator"])
-    df_sorted = df.sort_values("size", ascending=False).head(3).reset_index(drop=True)
-    df_sorted["Rank"] = df_sorted.index + 1
-    df_sorted["Indicator"] = df_sorted["side"].apply(lambda x: "🔼" if x.lower() == "buy" else "🔽")
-    return df_sorted[["Rank", "Price", "Size", "Side", "Indicator"]]
+# --- Predict dynamically ---
+features_df["prediction"] = model.predict(X)
 
-st.subheader("Top 3 Largest Trades")
-st.table(top_3_trades(df_raw))
+# --- Display predictions and stats ---
+st.subheader("Predictions")
+st.dataframe(features_df.style
+             .highlight_max(subset=["prediction"], color="lightgreen")
+             .highlight_min(subset=["prediction"], color="lightcoral"))
+
+st.subheader("Top 3 Trades")
+st.table(features_df.nlargest(3, "prediction")[["price", "size", "side", "prediction"]])
+
+st.subheader("Summary Statistics")
+st.write(features_df.describe())
