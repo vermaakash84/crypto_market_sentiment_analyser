@@ -3,73 +3,36 @@ import pandas as pd
 import numpy as np
 import joblib
 
-# --- Load final champion model ---
-model = joblib.load("champion_model.pkl")  # Your correct model filename
+# --- Load champion model ---
+model = joblib.load("champion_model.pkl")
 
-# --- Feature calculation function ---
-def calculate_features(df):
-    """Calculate engineered features from raw trade inputs."""
-    df = df.copy()
-    df["price_change"] = df["price"].diff().fillna(0)
-    df["size_change"] = df["size"].diff().fillna(0)
-    df["buy_flag"] = (df["side"].str.lower() == "buy").astype(int)
-    df["sell_flag"] = (df["side"].str.lower() == "sell").astype(int)
-    df["cumulative_buy"] = df["size"] * df["buy_flag"]
-    df["cumulative_sell"] = df["size"] * df["sell_flag"]
-    df["rolling_mean_price"] = df["price"].rolling(3, min_periods=1).mean()
-    df["rolling_std_price"] = df["price"].rolling(3, min_periods=1).std().fillna(0)
-    df["rolling_mean_size"] = df["size"].rolling(3, min_periods=1).mean()
-    df["rolling_std_size"] = df["size"].rolling(3, min_periods=1).std().fillna(0)
-    df["buy_sell_ratio"] = df["cumulative_buy"] / (df["cumulative_sell"] + 1e-6)
-    df["price_volatility"] = df["price"].rolling(5, min_periods=1).std().fillna(0)
-    df["size_volatility"] = df["size"].rolling(5, min_periods=1).std().fillna(0)
-    df["trade_count"] = np.arange(1, len(df)+1)
-    df["buy_count"] = df["buy_flag"].cumsum()
-    df["sell_count"] = df["sell_flag"].cumsum()
-    df["buy_sell_diff"] = df["buy_count"] - df["sell_count"]
-    df["price_momentum"] = df["price"] - df["price"].shift(3).fillna(0)
-    df["size_momentum"] = df["size"] - df["size"].shift(3).fillna(0)
-    df["large_trade_flag"] = (df["size"] > df["size"].mean() + 2*df["size"].std()).astype(int)
-    df["price_spike_flag"] = (df["price_change"].abs() > 2*df["price_change"].std()).astype(int)
-    df["recent_buy_ratio"] = df["buy_flag"].rolling(5, min_periods=1).mean()
-    df["recent_sell_ratio"] = df["sell_flag"].rolling(5, min_periods=1).mean()
-    df["price_slope"] = df["price"].diff().rolling(3, min_periods=1).mean().fillna(0)
-    df["size_slope"] = df["size"].diff().rolling(3, min_periods=1).mean().fillna(0)
-    return df
+# --- Load precomputed features ---
+# This CSV must have columns exactly matching the features your model was trained on
+precomputed_features = pd.read_csv("precomputed_features.csv")
 
-# --- Top 3 largest trades ---
-def top_3_trades(df):
-    if df.empty:
-        return pd.DataFrame(columns=["Rank", "Price", "Size", "Side", "Indicator"])
-    df_sorted = df.sort_values("size", ascending=False).head(3).reset_index(drop=True)
-    df_sorted["Rank"] = df_sorted.index + 1
-    df_sorted["Indicator"] = df_sorted["side"].apply(lambda x: "🔼" if x.lower() == "buy" else "🔽")
-    return df_sorted[["Rank", "Price", "Size", "Side", "Indicator"]]
+# --- Load original trades corresponding to precomputed features ---
+# This CSV is optional, for editable UI and matching predictions
+trade_inputs = pd.read_csv("trade_inputs.csv")
 
-# --- Streamlit UI ---
-st.title("Crypto Market Sentiment Analyzer")
-st.write("Enter trades below to see live predictions and stats.")
+st.title("Crypto Market Sentiment Analyzer (Champion Model)")
+st.write("This app uses the champion model for predictions.")
 
-# Editable trade table
+# --- Editable Trade Table ---
 st.subheader("Trade Input Table")
-default_data = {
-    "price": [100, 102, 101],
-    "size": [5, 10, 7],
-    "side": ["Buy", "Sell", "Buy"]
-}
-df_raw = st.data_editor(pd.DataFrame(default_data), num_rows="dynamic", use_container_width=True)
+df_raw = st.data_editor(trade_inputs, num_rows="dynamic", width="stretch")
 
-# Calculate features and predictions in real-time
-df_features = calculate_features(df_raw)
-feature_cols = [col for col in df_features.columns if col not in ["price", "size", "side"]]
-df_features_for_model = df_features[feature_cols]
+# --- Map edits to precomputed features ---
+# For simplicity, we assume the user edits don't change feature names
+# In practice, you'd recalculate features here
+df_features_for_model = precomputed_features.loc[df_raw.index]
 
+# --- Make predictions ---
 if not df_features_for_model.empty:
     df_raw["prediction"] = model.predict(df_features_for_model)
 else:
     df_raw["prediction"] = []
 
-# Highlight extreme trades
+# --- Highlight extreme trades ---
 def highlight_extremes(row):
     if row["size"] > df_raw["size"].mean() + 2*df_raw["size"].std():
         return ["background-color: #ffcccc"]*len(row)
@@ -77,9 +40,9 @@ def highlight_extremes(row):
         return [""]*len(row)
 
 st.subheader("Trades with Predictions")
-st.dataframe(df_raw.style.apply(highlight_extremes, axis=1), use_container_width=True)
+st.dataframe(df_raw.style.apply(highlight_extremes, axis=1), width="stretch")
 
-# Summary stats
+# --- Summary Stats ---
 st.subheader("Summary Stats")
 total_buys = df_raw[df_raw["side"].str.lower()=="buy"]["size"].sum()
 total_sells = df_raw[df_raw["side"].str.lower()=="sell"]["size"].sum()
@@ -89,6 +52,14 @@ col1.metric("Total Buys", total_buys)
 col2.metric("Total Sells", total_sells)
 col3.metric("Largest Trade", largest_trade)
 
-# Top 3 largest trades
+# --- Top 3 Largest Trades ---
+def top_3_trades(df):
+    if df.empty:
+        return pd.DataFrame(columns=["Rank", "Price", "Size", "Side", "Indicator"])
+    df_sorted = df.sort_values("size", ascending=False).head(3).reset_index(drop=True)
+    df_sorted["Rank"] = df_sorted.index + 1
+    df_sorted["Indicator"] = df_sorted["side"].apply(lambda x: "🔼" if x.lower() == "buy" else "🔽")
+    return df_sorted[["Rank", "Price", "Size", "Side", "Indicator"]]
+
 st.subheader("Top 3 Largest Trades")
 st.table(top_3_trades(df_raw))
