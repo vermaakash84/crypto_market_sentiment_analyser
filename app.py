@@ -5,6 +5,7 @@ import joblib
 import gdown
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 # -----------------------------
 # File paths
@@ -14,7 +15,6 @@ HISTORICAL_DATA_FILE = "historical_data.csv"
 MODEL_FILE = "champion_model.pkl"
 
 st.set_page_config(page_title="Crypto Market Sentiment Analyzer", layout="wide")
-
 st.title("📈 Crypto Market Sentiment Analyzer")
 
 # -----------------------------
@@ -81,13 +81,11 @@ if show_hist:
 if show_charts:
     st.subheader("📈 Charts")
 
-    # Example: line chart of historical closing prices
     if "Close" in df_hist.columns:
         st.line_chart(df_hist["Close"])
     else:
         st.warning("Column 'Close' not found in historical_data.csv.")
 
-    # Example: correlation heatmap
     numeric_cols = df_hist.select_dtypes(include='number').columns
     if len(numeric_cols) > 1:
         st.write("Correlation Heatmap")
@@ -97,20 +95,33 @@ if show_charts:
         st.pyplot(fig)
 
 # -----------------------------
-# Predictions
+# Interactive Predictions
 # -----------------------------
 if predict:
-    st.subheader("🤖 Model Predictions")
+    st.subheader("🤖 Model Predictions (Interactive)")
 
-    # Check if model expects certain columns
-    features = df_hist.drop(columns=[col for col in df_hist.columns if col not in df_hist.select_dtypes(include='number')], errors='ignore')
-
-    if features.shape[1] == 0:
+    # Identify numeric features
+    numeric_features = df_hist.select_dtypes(include=np.number).columns.tolist()
+    if len(numeric_features) == 0:
         st.warning("No numeric features found in historical_data.csv for prediction.")
     else:
-        # Example: predict on first 10 rows
-        st.write("Predictions on first 10 rows:")
-        preds = model.predict(features.head(10))
-        st.write(preds)
+        st.sidebar.subheader("Input Features for Prediction")
 
-st.info("App is interactive! Use the sidebar to toggle data, charts, and predictions.")
+        # Create input sliders for each numeric feature
+        user_input = {}
+        for feature in numeric_features:
+            min_val = float(df_hist[feature].min())
+            max_val = float(df_hist[feature].max())
+            mean_val = float(df_hist[feature].mean())
+            step = (max_val - min_val)/100 if (max_val - min_val) > 0 else 1
+            user_input[feature] = st.sidebar.slider(feature, min_val, max_val, mean_val, step=step)
+
+        # Convert user input to DataFrame
+        input_df = pd.DataFrame([user_input])
+
+        # Make prediction
+        prediction = model.predict(input_df)[0]
+        st.write("### Prediction Result:")
+        st.write(prediction)
+
+st.info("App is fully interactive! Use the sidebar to toggle data, charts, and enter features for predictions.")
