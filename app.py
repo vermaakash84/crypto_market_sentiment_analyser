@@ -4,11 +4,11 @@ import numpy as np
 import joblib
 
 # --- Load final champion model ---
-model = joblib.load("production_model_final.pkl")
-optimal_weights = joblib.load("optimal_weights_final.pkl")  # Optional if needed
+model = joblib.load("champion_model.pkl")  # Your correct model filename
 
 # --- Feature calculation function ---
 def calculate_features(df):
+    """Calculate engineered features from raw trade inputs."""
     df = df.copy()
     df["price_change"] = df["price"].diff().fillna(0)
     df["size_change"] = df["size"].diff().fillna(0)
@@ -47,16 +47,8 @@ def top_3_trades(df):
     return df_sorted[["Rank", "Price", "Size", "Side", "Indicator"]]
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="Crypto Market Sentiment Analyzer", layout="wide")
 st.title("Crypto Market Sentiment Analyzer")
-
-# Sidebar with champion model metrics
-st.sidebar.header("Champion Model Performance")
-st.sidebar.metric("Accuracy", "59%")
-st.sidebar.metric("Fear Recall", "60%")
-st.sidebar.metric("Extreme Fear Recall", "100%")
-
-st.write("Enter trades below to see live predictions, summary stats, and top trades.")
+st.write("Enter trades below to see live predictions and stats.")
 
 # Editable trade table
 st.subheader("Trade Input Table")
@@ -65,11 +57,7 @@ default_data = {
     "size": [5, 10, 7],
     "side": ["Buy", "Sell", "Buy"]
 }
-df_raw = st.data_editor(
-    pd.DataFrame(default_data),
-    num_rows="dynamic",
-    use_container_width=True
-)
+df_raw = st.data_editor(pd.DataFrame(default_data), num_rows="dynamic", use_container_width=True)
 
 # Calculate features and predictions in real-time
 df_features = calculate_features(df_raw)
