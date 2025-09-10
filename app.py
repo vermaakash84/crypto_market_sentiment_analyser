@@ -5,8 +5,8 @@ import joblib
 from io import BytesIO
 
 # --- Load Pre-trained Model and Label Encoder ---
-model = joblib.load('champion_model.pkl')
-label_encoder = joblib.load('label_encoder.pkl')
+model = joblib.load('production_model_final.pkl')
+le = joblib.load('production_label_encoder.pkl')
 
 # --- Helper Function: Preprocess Data ---
 def preprocess_data(df):
@@ -61,7 +61,7 @@ if uploaded_file is not None:
 
         # Predict sentiment
         preds_encoded = model.predict(processed_features)
-        preds = label_encoder.inverse_transform(preds_encoded)
+        preds = le.inverse_transform(preds_encoded)
 
         processed_features['predicted_sentiment'] = preds
         st.subheader("🎯 Predicted Market Sentiment")
