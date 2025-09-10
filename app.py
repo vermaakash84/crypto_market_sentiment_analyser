@@ -1,85 +1,67 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
 import joblib
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
 
-# Load champion model
-with open('champion_model.pkl', 'rb') as f:
-    model = pickle.load(f)
+# Load the trained model and label encoder
+@st.cache_resource
+def load_model():
+    model = joblib.load('champion_xgb_model.pkl')
+    label_encoder = joblib.load('label_encoder.pkl')
+    return model, label_encoder
 
-# Initialize editable trades data
-if 'trades' not in st.session_state:
-    st.session_state.trades = pd.DataFrame({
-        'price': [50000, 51000],
-        'size': [0.1, 0.2],
-        'side': ['buy', 'sell'],
-        'fee': [10, 12],
-        'timestamp': ['2025-09-09 14:00', '2025-09-09 14:05']
-    })
+model, label_encoder = load_model()
 
-st.title("Crypto Market Sentiment Analyzer")
+st.title("Crypto Market Sentiment Analyzer 📈")
 
-# Editable table
-st.subheader("Editable Trades Table")
-edited_df = st.data_editor(st.session_state.trades, num_rows="dynamic")
-st.session_state.trades = edited_df.copy()
+st.markdown("""
+You can input real-time trading data below to predict the market sentiment (Fear, Greed, Neutral, etc.). 
+This helps analyze the relationship between trader behavior and market sentiment for smarter strategies.
+""")
 
-# Feature calculation (ensure correct feature order)
-def calculate_features(trades_df):
-    # Example of computed features
-    features = {
-        'mean_exec_price': [trades_df['price'].mean()],
-        'total_usd': [trades_df['price'].sum()],
-        'total_tokens': [trades_df['size'].sum()],
-        'avg_fee': [trades_df['fee'].mean()],
-        'total_pnl': [0],  # Placeholder
-        'buy_ratio': [(trades_df['side'] == 'buy').mean()],
-        'crossed_ratio': [0],  # Placeholder
-        'exec_price_volatility': [trades_df['price'].std()],
-        'fee_volatility': [trades_df['fee'].std()],
-        'price_efficiency': [0],  # Placeholder
-        'fee_efficiency': [0],    # Placeholder
-        'risk_reward': [0],       # Placeholder
-        'aggressiveness': [0],    # Placeholder
-        'smart_money': [0],       # Placeholder
-        'pnl_per_usd': [0],       # Placeholder
-        'enhanced_fee_efficiency': [0],  # Placeholder
-        'smart_fee_ratio': [0],          # Placeholder
-        'risk_adjusted_efficiency': [0],# Placeholder
-        'aggressive_efficiency': [0],    # Placeholder
-        'volatility_ratio': [0],         # Placeholder
-        'stable_efficiency': [0],        # Placeholder
-        'top_features_interaction': [0],
-        'buy_ratio': [(trades_df['side'] == 'buy').mean()]
-    }
-    return pd.DataFrame(features)
+# Define input fields for the features
+mean_exec_price = st.number_input("Mean Execution Price", min_value=0.0, value=1000.0)
+total_usd = st.number_input("Total USD", min_value=0.0, value=50000.0)
+total_tokens = st.number_input("Total Tokens", min_value=0.0, value=1500.0)
+avg_fee = st.number_input("Average Fee", min_value=0.0, value=50.0)
+total_pnl = st.number_input("Total PnL", value=1000.0)
+buy_ratio = st.number_input("Buy Ratio (0 to 1)", min_value=0.0, max_value=1.0, value=0.5)
+crossed_ratio = st.number_input("Crossed Ratio (0 to 1)", min_value=0.0, max_value=1.0, value=0.5)
+exec_price_volatility = st.number_input("Execution Price Volatility", value=5.0)
+fee_volatility = st.number_input("Fee Volatility", value=1.0)
+price_efficiency = st.number_input("Price Efficiency", value=1.2)
+fee_efficiency = st.number_input("Fee Efficiency", value=0.1)
+risk_reward = st.number_input("Risk-Reward Ratio", value=0.05)
+aggressiveness = st.number_input("Aggressiveness", value=0.3)
+smart_money = st.number_input("Smart Money Indicator", value=0.7)
 
-features_df = calculate_features(st.session_state.trades)
+# Collect input into a DataFrame
+input_features = pd.DataFrame({
+    'mean_exec_price': [mean_exec_price],
+    'total_usd': [total_usd],
+    'total_tokens': [total_tokens],
+    'avg_fee': [avg_fee],
+    'total_pnl': [total_pnl],
+    'buy_ratio': [buy_ratio],
+    'crossed_ratio': [crossed_ratio],
+    'exec_price_volatility': [exec_price_volatility],
+    'fee_volatility': [fee_volatility],
+    'price_efficiency': [price_efficiency],
+    'fee_efficiency': [fee_efficiency],
+    'risk_reward': [risk_reward],
+    'aggressiveness': [aggressiveness],
+    'smart_money': [smart_money]
+})
 
-# Make prediction
-if hasattr(model, "predict_proba"):
-    pred_scores = model.predict_proba(features_df)
-    pred_label = model.classes_[np.argmax(pred_scores)]
-else:
-    pred_label = model.predict(features_df)[0]
+if st.button("Predict Market Sentiment"):
+    prediction_encoded = model.predict(input_features)
+    prediction = label_encoder.inverse_transform(prediction_encoded)[0]
 
-# Display prediction
-st.subheader("Predicted Sentiment")
-st.write(f"🧠 Predicted Sentiment: **{pred_label}**")
+    st.success(f"Predicted Market Sentiment: **{prediction}**")
 
-# Top 3 largest trades
-st.subheader("Top 3 Largest Trades")
-top_trades = st.session_state.trades.nlargest(3, 'size')
-st.table(top_trades)
+    st.info("Use this result to understand how current trading behavior aligns or diverges from overall market sentiment.")
 
-# Summary statistics
-st.subheader("Summary Statistics")
-st.write(st.session_state.trades.describe())
-
-# Highlight extremes
-st.subheader("Highlight Extremes")
-max_price = st.session_state.trades['price'].max()
-min_price = st.session_state.trades['price'].min()
-st.write(f"💰 Maximum Price: {max_price}")
-st.write(f"📉 Minimum Price: {min_price}")
+st.markdown("---")
+st.write("🔍 Developed to analyze hidden trends and signals that could influence smarter trading strategies.")
