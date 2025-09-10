@@ -1,65 +1,68 @@
 import streamlit as st
-import joblib
 import pandas as pd
 import numpy as np
-import os
+import joblib
+from io import BytesIO
 
-# --- Function to load model, scaler, and label encoder ---
-@st.cache_resource
-def load_model_files():
-    try:
-        model = joblib.load("production_model_final.pkl")
-        scaler = joblib.load("production_scaler.pkl")
-        le = joblib.load("production_label_encoder.pkl")
-        return model, scaler, le
-    except FileNotFoundError as e:
-        st.error(f"❌ Model file not found: {e.filename}. Make sure all .pkl files are uploaded!")
-        return None, None, None
+# --- Load Pre-trained Model and Label Encoder ---
+model = joblib.load('champion_model.pkl')
+label_encoder = joblib.load('label_encoder.pkl')
 
-# --- Main Streamlit App ---
-def main():
-    st.set_page_config(page_title="Market Sentiment Analyzer", layout="centered")
-    st.title("📈 Market Sentiment Analyzer")
-    st.write("Predicting Fear & Greed in Market Behavior")
+# --- Helper Function: Preprocess Data ---
+def preprocess_data(df):
+    df = df.copy()
+    
+    # Basic feature engineering
+    df['fee_efficiency'] = df['Fee'] / (df['Size USD'] + 1e-5)
+    df['total_usd'] = df['Size USD']
+    df['total_pnl'] = df['Closed PnL']
+    df['avg_fee'] = df['Fee']
+    
+    # Aggregate by 'Timestamp IST'
+    daily = df.groupby('Timestamp IST').agg({
+        'total_usd': 'sum',
+        'total_pnl': 'sum',
+        'avg_fee': 'mean',
+        'fee_efficiency': 'mean'
+    }).reset_index()
+    
+    return daily[['total_usd', 'total_pnl', 'avg_fee', 'fee_efficiency']]
 
-    # Load model, scaler, label encoder
-    model, scaler, le = load_model_files()
-    if not model or not scaler or not le:
-        st.stop()  # Stop app if model files are missing
+# --- Helper Function: Convert DataFrame to CSV for download ---
+def convert_df(df):
+    return df.to_csv(index=False).encode('utf-8')
 
-    # Sidebar: Input features
-    st.sidebar.header("Input Market Features")
-    total_usd = st.sidebar.slider("Total USD Volume", -3.0, 3.0, 0.0)
-    price_efficiency = st.sidebar.slider("Price Efficiency", -3.0, 3.0, 0.0)
-    smart_money = st.sidebar.slider("Smart Money Indicator", -3.0, 3.0, 0.0)
-    buy_ratio = st.sidebar.slider("Buy Ratio", -3.0, 3.0, 0.0)
+# --- Streamlit UI ---
+st.title("🚀 Crypto Market Sentiment Predictor")
 
-    # Feature vector
-    input_features = np.array([[total_usd, price_efficiency, smart_money, buy_ratio]])
+uploaded_file = st.file_uploader("Upload your raw trading data CSV", type="csv")
 
-    if st.sidebar.button("Analyze Sentiment"):
-        # Scale features
-        scaled_features = scaler.transform(input_features)
+if uploaded_file:
+    raw_data = pd.read_csv(uploaded_file)
+    st.subheader("✅ Raw Data Sample")
+    st.dataframe(raw_data.head())
 
-        # Predict sentiment
-        prediction = model.predict(scaled_features)
-        sentiment = le.inverse_transform(prediction)[0]
+    # Feature Engineering
+    processed_features = preprocess_data(raw_data)
+    st.subheader("✅ Processed Features Sample")
+    st.dataframe(processed_features.head())
 
-        # Prediction confidence
-        probabilities = model.predict_proba(scaled_features)
-        confidence = np.max(probabilities)
+    # Predict sentiment
+    preds_encoded = model.predict(processed_features)
+    preds = label_encoder.inverse_transform(preds_encoded)
 
-        # Display results
-        st.success(f"🎯 Predicted Sentiment: **{sentiment}**")
-        st.info(f"📊 Confidence: {confidence:.2%}")
+    processed_features['predicted_sentiment'] = preds
+    st.subheader("🎯 Predicted Market Sentiment")
+    st.dataframe(processed_features[['total_usd', 'total_pnl', 'avg_fee', 'fee_efficiency', 'predicted_sentiment']])
 
-        # Visual indicators
-        if "Fear" in sentiment:
-            st.error("⚠️ Market caution advised")
-        elif "Greed" in sentiment:
-            st.warning("💰 Profit-taking opportunity")
-        else:
-            st.success("✅ Market neutral")
+    # Download Button for results
+    csv = convert_df(processed_features)
+    st.download_button(
+        label="📥 Download Predictions as CSV",
+        data=csv,
+        file_name='predicted_sentiments.csv',
+        mime='text/csv',
+    )
 
-if __name__ == "__main__":
-    main()
+else:
+    st.info("⚠️ Please upload a CSV file to start predicting market sentiment.")
