@@ -8,7 +8,7 @@ from sklearn.preprocessing import LabelEncoder
 # Load the trained model and label encoder
 @st.cache_resource
 def load_model():
-    model = joblib.load('champion_xgb_model.pkl')
+    model = joblib.load('champion_model.pkl')
     label_encoder = joblib.load('label_encoder.pkl')
     return model, label_encoder
 
