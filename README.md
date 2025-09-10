@@ -1,50 +1,49 @@
-# Market Sentiment Prediction Web App
+ Crypto Market Sentiment & Trader Behavior Analyzer
 
-This Streamlit web application predicts market sentiment categories (Fear, Greed, Neutral, etc.)  
-based on historical trading data using a champion XGBoost model.  
-The champion model is automatically selected based on the best Fear recall and overall accuracy from multiple trained models.
+This project explores and analyzes the relationship between **trader behavior** and **market sentiment** in the cryptocurrency market.  
+It predicts market sentiment (Extreme Fear, Fear, Neutral, Greed, Extreme Greed) based on key trading behavior features.
+
+---
+
+## 🎯 Objective
+
+To analyze how trading behavior metrics (profitability, risk, volume, leverage) align or diverge from overall market sentiment (Fear vs Greed),  
+and identify hidden trends or signals for smarter trading strategies.
 
 ---
 
 ## 🚀 Features
-- Interactive input form for trading metrics
-- Real-time prediction of market sentiment
-- Built with Streamlit for fast web interaction
+
+- Predict market sentiment based on input trading behavior features.
+- Uses an optimized XGBoost model trained with advanced engineered features and sample weights.
+- Visualizes key insights such as feature importance and correlation (in notebook).
+- Designed for easy deployment on Streamlit Cloud.
 
 ---
 
-## ⚡ How to Use
+## ⚙️ How It Works
 
-1. Deploy the app on Streamlit Cloud or run it locally.
-2. Enter the required input fields:
-    - Mean Execution Price
-    - Total USD Traded
-    - Total Tokens Traded
-    - Average Fee
-    - Total PnL
-    - Buy Ratio
-    - Crossed Ratio
-    - Execution Price Volatility
-    - Fee Volatility
-    - Price Efficiency
-    - Fee Efficiency
-    - Risk-Reward Ratio
-    - Aggressiveness
-    - Smart Money
-3. Click **Predict Sentiment**.
-4. View the predicted market sentiment.
+- Users input trading metrics (e.g., mean execution price, total USD volume, avg fee, risk-reward ratio).
+- The app loads a pre-trained model (`production_model_final.pkl`) and predicts the market sentiment.
+- Displays optimized weights used for training.
 
 ---
 
-## 📂 Data Download
+## ✅ Files Included
 
-The large dataset `historical_data.csv` (46 MB) is available for download here:  
-[Google Drive Link](https://drive.google.com/file/d/1BWlLp26bUZ8prT8L-e6BXhNcBRwCTpgC/view?usp=sharing)
-
-👉 Make sure to replace `https://drive.google.com/your_file_link_here`  
-with your actual file link from Google Drive (use the "share" option and get a public link).
+| File | Description |
+|------|-------------|
+| `app.py` | Streamlit app entry point for deployment. |
+| `production_model_final.pkl` | Trained XGBoost classifier model. |
+| `optimal_weights_final.pkl` | Optimized class sample weights used in training. |
+| `requirements.txt` | Python dependencies required to run the app. |
+| `README.md` | This file. |
 
 ---
 
-## ✅ Project Structure
+## 📋 Usage
 
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/your-username/your-repo-name.git
+   cd your-repo-name
