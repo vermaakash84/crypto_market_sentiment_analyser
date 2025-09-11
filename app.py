@@ -2,83 +2,40 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-from io import BytesIO
 
 # --- Load Pre-trained Model and Label Encoder ---
 model = joblib.load('production_model_final.pkl')
 le = joblib.load('production_label_encoder.pkl')
 
-# --- Helper Function: Preprocess Data ---
-def preprocess_data(df):
-    df = df.copy()
-
-    # Trim column names of any leading/trailing spaces
-    df.columns = df.columns.str.strip()
-
-    # Debugging: Show cleaned column names
-    st.write("🔍 Cleaned Column Names:")
-    st.write(df.columns.tolist())
-
-    # Basic feature engineering
-    df['fee_efficiency'] = df['Fee'] / (df['Size USD'] + 1e-5)
-    df['total_usd'] = df['Size USD']
-    df['total_pnl'] = df['Closed PnL']
-    df['avg_fee'] = df['Fee']
-    
-    # Aggregate by 'Timestamp IST'
-    daily = df.groupby('Timestamp IST').agg({
-        'total_usd': 'sum',
-        'total_pnl': 'sum',
-        'avg_fee': 'mean',
-        'fee_efficiency': 'mean'
-    }).reset_index()
-    
-    return daily[['total_usd', 'total_pnl', 'avg_fee', 'fee_efficiency']]
-
-# --- Helper Function: Convert DataFrame to CSV for Download ---
-def convert_df(df):
-    return df.to_csv(index=False).encode('utf-8')
-
 # --- Streamlit UI ---
-st.title("🚀 Crypto Market Sentiment Predictor")
+st.title("🚀 Crypto Market Sentiment Classification")
 
-uploaded_file = st.file_uploader("📂 Upload your raw trading data CSV", type="csv")
+st.subheader("📊 Enter Trading Features Manually")
 
-if uploaded_file is not None:
-    raw_data = pd.read_csv(uploaded_file)
-    st.subheader("✅ Raw Data Sample")
-    st.dataframe(raw_data.head())
+# Manual user inputs
+mean_exec_price = st.number_input('Mean Execution Price', min_value=0.0, step=0.01)
+total_usd = st.number_input('Total USD', min_value=0.0, step=0.01)
+total_tokens = st.number_input('Total Tokens', min_value=0.0, step=0.01)
+avg_fee = st.number_input('Average Fee', min_value=0.0, step=0.01)
+total_pnl = st.number_input('Total PnL', step=0.01)
+buy_ratio = st.number_input('Buy Ratio (e.g., 0.5)', min_value=0.0, max_value=1.0, step=0.01)
+crossed_ratio = st.number_input('Crossed Ratio (e.g., 0.5)', min_value=0.0, max_value=1.0, step=0.01)
 
-    # Debugging uploaded columns
-    st.write("📋 Columns in uploaded file:")
-    st.write(raw_data.columns.tolist())
+if st.button('🔍 Predict Sentiment'):
+    # Prepare input DataFrame for prediction
+    input_data = pd.DataFrame([{
+        'mean_exec_price': mean_exec_price,
+        'total_usd': total_usd,
+        'total_tokens': total_tokens,
+        'avg_fee': avg_fee,
+        'total_pnl': total_pnl,
+        'buy_ratio': buy_ratio,
+        'crossed_ratio': crossed_ratio
+    }])
 
-    # Feature Engineering
-    try:
-        processed_features = preprocess_data(raw_data)
-        st.subheader("✅ Processed Features Sample")
-        st.dataframe(processed_features.head())
+    # Predict sentiment
+    prediction_encoded = model.predict(input_data)
+    prediction = le.inverse_transform(prediction_encoded)[0]
 
-        # Predict sentiment
-        preds_encoded = model.predict(processed_features)
-        preds = le.inverse_transform(preds_encoded)
-
-        processed_features['predicted_sentiment'] = preds
-        st.subheader("🎯 Predicted Market Sentiment")
-        st.dataframe(processed_features[['total_usd', 'total_pnl', 'avg_fee', 'fee_efficiency', 'predicted_sentiment']])
-
-        # Download Button for results
-        csv = convert_df(processed_features)
-        st.download_button(
-            label="📥 Download Predictions as CSV",
-            data=csv,
-            file_name='predicted_sentiments.csv',
-            mime='text/csv',
-        )
-
-    except KeyError as e:
-        st.error(f"⚠️ Missing expected column in uploaded file: {e}")
-        st.info("❗ Please check that columns 'Fee', 'Size USD', 'Closed PnL', and 'Timestamp IST' are present.")
-
-else:
-    st.info("⚠️ Please upload a CSV file to start predicting market sentiment.")
+    # Display final classification result
+    st.success(f"🎯 Predicted Market Sentiment Classification: **{prediction}**")
